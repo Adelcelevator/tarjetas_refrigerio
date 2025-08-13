@@ -1,0 +1,12 @@
+version: '3'
+services:
+  tarjetas_refrigerio:
+    container_name: tarjetas_refrigerio
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DIRECTORIO: tarjetas_refrigerio
+    build:
+      context: ./
+      dockerfile: Dockerfile
