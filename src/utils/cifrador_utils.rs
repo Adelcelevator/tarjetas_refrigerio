@@ -1,31 +1,85 @@
-type Clave = aes_gcm::aead::generic_array::GenericArray<u8, sha3::digest::typenum::UInt<sha3::digest::typenum::UInt<sha3::digest::typenum::UInt<sha3::digest::typenum::UInt<sha3::digest::typenum::UInt<sha3::digest::typenum::UInt<sha3::digest::typenum::UTerm, aes_gcm::aead::consts::B1>, aes_gcm::aead::consts::B0>, aes_gcm::aead::consts::B0>, aes_gcm::aead::consts::B0>, aes_gcm::aead::consts::B0>, aes_gcm::aead::consts::B0>>;
 use aes_gcm::{Aes256Gcm, Nonce, KeyInit, aead::Aead};
 use base64::Engine;
+use rand::RngExt;
 use sha3::{Digest, Sha3_256};
-use std::env;
+use log::error;
+use crate::utils::{enums::errors::service_error::ServiceError, env_utils::get_variable};
 
-pub fn cifrar(texto_cifrar: String) -> String {
-    let cipher = Aes256Gcm::new_from_slice(_get_clave().as_ref()).expect("Error al generar el cifrador");
-    let nonce = Nonce::from_slice(b"unique nonce"); // 96-bits; unique per message
-    let ciphertext = cipher.encrypt(nonce, texto_cifrar.as_bytes()).expect("msg");
-    base64::engine::general_purpose::STANDARD.encode(ciphertext)
+pub fn cifrar(texto_cifrar: String) -> Result<String,ServiceError> {
+    let cipher = match Aes256Gcm::new_from_slice(_get_clave()?.as_ref()){
+        Ok(res)=>res,
+        Err(error)=>{
+            error!("Error al generar el cifrador: {}",error);
+            return Err(ServiceError::InternalServerError);
+        }
+    };
+    let mut proto_nonce = [0u8;12];
+    rand::rng().fill(&mut proto_nonce);
+
+    let nonce = Nonce::from_slice(&proto_nonce);
+    let ciphertext = match cipher.encrypt(nonce, texto_cifrar.as_bytes()){
+        Ok(res)=>res,
+        Err(error)=>{
+            error!("Existio un error al cifrar el texto: {}",error);
+            return Err(ServiceError::InternalServerError);
+        }
+    };
+
+    let mut texto_final = Vec::with_capacity(proto_nonce.len()+ciphertext.len());
+
+    texto_final.extend_from_slice(&proto_nonce);
+    texto_final.extend_from_slice(&ciphertext);
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(texto_final))
 }
 
-pub fn descifrar(texto_descifrar: &String) -> String {
-    let cipher = Aes256Gcm::new_from_slice(_get_clave().as_ref()).expect("Error al generar el cifrador");
-    let nonce = Nonce::from_slice(b"unique nonce"); // 96-bits; unique per message
-    let binding = base64::engine::general_purpose::STANDARD
-        .decode(texto_descifrar.as_bytes())
-        .expect("Error al formatear");
-    let plaintext = cipher
-        .decrypt(nonce, binding.as_slice())
-        .expect("error al descifrar");
-    std::string::String::from_utf8(plaintext).expect("Error al formatear la salida")
+pub fn descifrar(texto_descifrar: &String) -> Result<String,ServiceError> {
+    let cipher = match Aes256Gcm::new_from_slice(_get_clave()?.as_ref()){
+        Ok(res)=>res,
+        Err(error)=>{
+            error!("Existio  un error al generar el decifrador: {}",error);
+            return Err(ServiceError::InternalServerError);
+        }
+    };
+    let decodificado = match base64::engine::general_purpose::STANDARD
+        .decode(texto_descifrar.as_bytes()){
+            Ok(des)=>des,
+            Err(error)=>{
+                error!("Existio  un error al decodificar de base 64: {}",error);
+                return Err(ServiceError::InternalServerError);
+            }
+        };
+    
+    if decodificado.len() < 12 {
+        error!("El texto decodificado no es el texto esperado: {}",decodificado.len());
+        return Err(ServiceError::InternalServerError);
+    }
+    let (nonce_bytes, ciphertext_bytes) = decodificado.split_at(12);
+    let nonce = Nonce::from_slice(&nonce_bytes); // 96-bits; unique per message
+    let plaintext = match cipher
+        .decrypt(nonce, ciphertext_bytes){
+            Ok(descifrado)=>descifrado,
+            Err(error)=>{
+                error!("Existio  un error al descifrar: {}",error);
+                return Err(ServiceError::InternalServerError);
+            }
+        };
+    
+    match std::string::String::from_utf8(plaintext){
+        Ok(texto)=>Ok(texto),
+        Err(error)=>{
+            error!("Existio un error al formtear el texto: {}",error);
+            Err(ServiceError::InternalServerError)
+        }
+    }
 }
 
-fn _get_clave() -> Clave {
-    let clave_cifrado = env::var("CLAVECIFRADO").expect("No se encontro la variable CLAVECIFRADO");
+fn _get_clave()-> Result<sha3::digest::Output<Sha3_256>,ServiceError> {
+    let Some(clave_cifrado) = get_variable::<String>("CLAVECIFRADO") else {
+        error!("No se pudo detrminar la clave de cifrado.");
+        return Err(ServiceError::InternalServerError);
+    };
     let mut hasher = Sha3_256::new();
     hasher.update(clave_cifrado.as_bytes());
-    hasher.finalize()
+    Ok(hasher.finalize())
 }

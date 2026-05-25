@@ -1,15 +1,3 @@
-pub mod comprobante_model;
-pub mod persona_model;
-pub mod rol_model;
-pub mod token_model;
-pub mod usuario_model;
-pub mod reprensentante_representado_model;
-pub mod comprobante_representado_model;
+pub mod mongo;
+pub mod postgres;
 mod archivo_model;
-pub mod tarjeta_model;
-pub mod tarjeta_historial_model;
-pub mod tipo_pago_model;
-pub mod unidades_model;
-pub mod parametro_det_model;
-pub mod pago_model;
-pub mod detallle_pago_model;

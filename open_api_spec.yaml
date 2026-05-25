@@ -1,0 +1,365 @@
+openapi: 3.0.3
+info:
+  title: API de Tarjetas de Refrigerio
+  description: Backend desarrollado en Rust (Actix-web) para la gestión de tarjetas, comprobantes y pagos.
+  version: 1.0.0
+
+servers:
+  - url: http://89.117.63.107:9695/tarjetasRefrigerio
+    description: Servidor de Pruebas
+  - url: /tarjetasRefrigerio
+    description: Servidor Local (Ruta relativa)
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: Token JWT almacenado en una cookie HTTP-only.
+
+  schemas:
+    Response:
+      type: object
+      properties:
+        codigo:
+          type: integer
+          example: 200
+        status:
+          type: string
+          nullable: true
+          example: "Exito"
+        mensaje:
+          type: string
+          nullable: true
+          example: "Operación realizada correctamente"
+
+    ResponseData:
+      type: object
+      properties:
+        codigo:
+          type: integer
+        status:
+          type: string
+          nullable: true
+        mensaje:
+          type: string
+          nullable: true
+        data:
+          type: object
+          description: Datos genéricos retornados según el endpoint.
+
+    LoginReq:
+      type: object
+      required:
+        - usuario
+        - clave
+      properties:
+        usuario:
+          type: string
+        clave:
+          type: string
+
+    ChangePasswordReq:
+      type: object
+      required:
+        - token
+        - clave
+      properties:
+        token:
+          type: string
+        clave:
+          type: string
+
+    ComprobanteNuevoReq:
+      type: object
+      required:
+        - usuario
+        - numero
+        - valor
+        - file
+      properties:
+        usuario:
+          type: string
+        numero:
+          type: string
+        valor:
+          type: number
+          format: float
+        file:
+          type: object
+          properties:
+            contenido:
+              type: string
+              description: Base64 del archivo
+            extension:
+              type: string
+        representados:
+          type: array
+          items:
+            type: integer
+
+    ComprobanteReq:
+      type: object
+      required:
+        - usuario
+      properties:
+        usuario:
+          type: string
+
+    BuscarPersonaCobroReq:
+      type: object
+      properties:
+        identificacion:
+          type: string
+          example: "1234567890"
+        nombre:
+          type: string
+          example: "Juan Perez"
+
+    PagoReq:
+      type: object
+      required:
+        - per_id
+        - cobrar
+        - usr_registro
+        - detalle_pagos
+      properties:
+        per_id:
+          type: string
+          example: "uuid-persona-123"
+        cobrar:
+          type: number
+          format: float
+          example: 25.50
+        observacion:
+          type: string
+          nullable: true
+        usr_registro:
+          type: string
+          example: "admin_user"
+        detalle_pagos:
+          type: array
+          items:
+            type: object
+            properties:
+              tipo_pago_id:
+                type: integer
+              valor_pago:
+                type: number
+                format: float
+
+paths:
+  /user/login:
+    post:
+      tags:
+        - Usuario
+      summary: Iniciar sesión
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginReq'
+      responses:
+        '200':
+          description: Login exitoso. Retorna datos del usuario y establece la cookie 'token'.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseData'
+
+  /user/logout:
+    get:
+      tags:
+        - Usuario
+      summary: Cerrar sesión
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Sesión cerrada e invalidada en MongoDB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /user/changePassword:
+    post:
+      tags:
+        - Usuario
+      summary: Cambiar contraseña
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordReq'
+      responses:
+        '200':
+          description: Contraseña actualizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /comprobante/usuario:
+    post:
+      tags:
+        - Comprobantes
+      summary: Cargar comprobantes de un usuario específico
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComprobanteReq'
+      responses:
+        '200':
+          description: Lista de últimos 10 comprobantes del usuario.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseData'
+
+  /comprobante/pendientes:
+    get:
+      tags:
+        - Comprobantes
+      summary: Listar todos los comprobantes pendientes de autorización
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Lista de comprobantes en estado 'PorAutorizar'.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseData'
+
+  /comprobante/guardar:
+    post:
+      tags:
+        - Comprobantes
+      summary: Registrar un nuevo comprobante
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComprobanteNuevoReq'
+      responses:
+        '200':
+          description: Comprobante guardado físicamente y registrado en DB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /comprobante/autorizar:
+    post:
+      tags:
+        - Comprobantes
+      summary: Autorizar una lista de comprobantes
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                usuario:
+                  type: string
+                numeros:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Resumen de aprobación.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /cobros/tiposPago:
+    post:
+      tags:
+        - Cobros
+      summary: Obtener tipos de pago y unidades disponibles
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Lista de tipos de pago y unidades.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseData'
+
+  /cobros/buscarPersona:
+    post:
+      tags:
+        - Cobros
+      summary: Buscar una persona para realizar un cobro
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuscarPersonaCobroReq'
+      responses:
+        '200':
+          description: Lista de personas encontradas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseData'
+
+  /cobros/guardar:
+    post:
+      tags:
+        - Cobros
+      summary: Registrar el pago de un consumo
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PagoReq'
+      responses:
+        '200':
+          description: Pago y detalles registrados correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /token/validar/{token}:
+    get:
+      tags:
+        - Seguridad
+      summary: Validar un token específico
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resultado de la validación.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'

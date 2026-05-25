@@ -38,7 +38,7 @@ appenders:
 #      max_size: 10MB
 
 root:
-  level: debug
+  level: info
   appenders:
     - stdout
     - file_log
@@ -46,7 +46,7 @@ root:
 
 loggers:
   actix_web:
-    level: debug
+    level: info
     appenders:
       - stdout
       - file_log
@@ -54,7 +54,7 @@ loggers:
     additive: false
 
   diesel:
-    level: debug
+    level: info
     appenders:
       - stdout
       - file_log
