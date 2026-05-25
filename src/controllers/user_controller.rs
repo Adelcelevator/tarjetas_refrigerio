@@ -1,56 +1,68 @@
-use std::env;
+use actix_web::{HttpResponse, cookie::{Cookie, SameSite, time::Duration}, post, get, web::{Data, Json}};
+use bb8::Pool;
+use diesel_async::{AsyncPgConnection, pooled_connection::AsyncDieselConnectionManager};
+use mongodb::Client;
+use log::error;
 
-use actix_web::{
-    cookie::{time::Duration, Cookie, SameSite}, get, post, web::{Data, Json, Path}, HttpResponse
-};
-use diesel::{
-    r2d2::{ConnectionManager, Pool},
-    PgConnection,
-};
-
-use crate::{models::data_model::usuario_model::{ChangePassword, Login}, repository::token_repo::TokenRepo, services::usuario_service};
+use crate::{models::data_model::postgres::usuario_model::{ChangePassword, Login}, services::usuario_service::{change_password_service, login_service, logout_service}, utils::{connection_utils::get_conexion, enums::errors::service_error::ServiceError, env_utils::get_variable}};
 
 #[post("/user/login")]
 pub async fn login_controller(
-    db_mongo: Data<TokenRepo>,
-    pool: Data<Pool<ConnectionManager<PgConnection>>>,
+    db_mongo: Data<Client>,
+    pool: Data<Pool<AsyncDieselConnectionManager<AsyncPgConnection>>>,
     login: Json<Login>,
-) -> HttpResponse {
-    let dominio = env::var("DOMINIO_COOKIE").expect("No se encontro la variable DOMINIO_COOKIE");
-    let vida_cookie = env::var("EXPIRACIONTOKENMINUTOS").expect("No se encontro la variable EXPIRACIONTOKENMINUTOS");
-    let res = usuario_service::login_service(&db_mongo, &pool, login.0).await;
-    if res.codigo.unwrap() != 200 {
-        return HttpResponse::Ok()
-        .json(res);
-    }
-    let clone = res.clone();
-    let cookie = Cookie::build("token", clone.data.unwrap().token)
+) -> Result<HttpResponse,ServiceError> {
+    let Some(mut con) = get_conexion(&pool).await else{
+        return Ok(HttpResponse::InternalServerError().finish());
+    };
+
+    let res = login_service(db_mongo.get_ref().clone(), &mut con, login.0).await?;
+
+    let Some(dominio) = get_variable::<String>("DOMINIO_COOKIE") else {
+        error!("No se encontro la variable DOMINIO_COOKIE");
+        return Ok(HttpResponse::InternalServerError().finish());
+    };
+    let Some(vida_cookie) = get_variable::<i64>("EXPIRACIONTOKENMINUTOS") else {
+        error!("No se encontro la variable DOMINIO_COOKIE");
+        return Ok(HttpResponse::InternalServerError().finish());
+    };
+
+    let Some(clone) = res.data.clone() else {
+        error!("Existio un error al generar la cookie.");
+        return Ok(HttpResponse::InternalServerError().finish());
+    };
+
+    let cookie = Cookie::build("token", clone.token)
                                             .path("/")
                                             .domain(dominio)
                                             .http_only(true)
                                             .same_site(SameSite::Strict)
-                                            .max_age(Duration::minutes(vida_cookie.parse::<i64>().unwrap()))
+                                            .max_age(Duration::minutes(vida_cookie))
                                             .finish()
                                             ;
-    HttpResponse::Ok()
+    Ok(HttpResponse::Ok()
         .cookie(cookie)
-        .json(res)
+        .json(res))
 }
 
-#[get("/user/logout/{token}")]
+#[get("/user/logout")]
 pub async fn logout_controller(
-    db_mongo: Data<TokenRepo>,
-    path:Path<String>,
-) -> HttpResponse {
-    HttpResponse::Ok()
-        .json(usuario_service::logout_service(&db_mongo, path.as_str()).await)
+    db_mongo: Data<Client>,
+) -> Result<HttpResponse,ServiceError> {
+    //TODO CORREGIR EL TOKEN
+    Ok(HttpResponse::Ok()
+        .json(logout_service(db_mongo.get_ref().clone(), "token").await?))
 }
 
 #[post("/user/changePassword")]
 pub async fn change_password_controller(
-    pool: Data<Pool<ConnectionManager<PgConnection>>>,
+    pool: Data<Pool<AsyncDieselConnectionManager<AsyncPgConnection>>>,
     change_data: Json<ChangePassword>,
-) -> HttpResponse {
-    HttpResponse::Ok()
-        .json(usuario_service::change_password_service(&pool, change_data.0).await)
+) -> Result<HttpResponse,ServiceError> {
+    let Some(mut con) = get_conexion(&pool).await else{
+        error!("No se pudo obtener una conexion del pool");
+        return Err(ServiceError::InternalServerError);
+    };
+    Ok(HttpResponse::Ok()
+        .json(change_password_service(&mut con, change_data.0).await?))
 }

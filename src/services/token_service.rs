@@ -1,43 +1,30 @@
-use crate::{models::responses::response::Response, repository::token_repo::TokenRepo, utils::{enums::estados_enum::Estados, token_user::validar_token}};
+use mongodb::Client;
 
-pub async fn validar_token_service(db_mongo: TokenRepo, token: &str) -> Response {
+use crate::{models::responses::response::Response, repository::mongo::token_repo::buscar_token, utils::{enums::{errors::service_error::ServiceError, estados_enum::Estados}, token_user::validar_token}};
+
+pub async fn validar_token_service(cliente: Client, token: &str) ->Result<Response,ServiceError> {
     if token.is_empty() {
-        return Response {
-            codigo: Some(401),
-            status: Some(String::from("Sin autorizacion")),
-            mensaje: Some(String::from("Token no valido")),
-        };
+        return Err(ServiceError::MissingToken("Token no encontrado.".to_string()));
     }
+    
     let token = urlencoding::encode(token).to_string();
-    let res = db_mongo
-        .buscar_token(token.as_str())
-        .await;
-    if res.is_none() {
-        Response {
-            codigo: Some(404),
-            status: Some(String::from("No encontrado")),
-            mensaje: Some(String::from("No se encontro el token")),
-        }  
-    }else{
-        if res.unwrap().estado != Estados::Activo{
-            return Response {
-                codigo: Some(401),
-                status: Some(String::from("Sin autorizacion")),
-                mensaje: Some(String::from("Token no valido")),
-            };    
-        }
-        let claims = validar_token(token.as_str());
-        if claims.exp ==0{
-            return Response {
-                codigo: Some(401),
-                status: Some(String::from("Sin autorizacion")),
-                mensaje: Some(String::from("Token no valido")),
-            };    
-        }
-        Response {
-            codigo: Some(200),
-            status: Some(String::from("OK")),
-            mensaje: Some(String::from("Exitoso")),
-        }
+    let Some(res) = buscar_token(cliente,token.as_str()).await? else{
+        return Err(ServiceError::MissingToken("No se encontro el token.".to_string()));
+    };
+    
+    if res.estado != Estados::Activo{
+        return Err(ServiceError::InvalidToken("Token no valido.".to_string()));
     }
+
+    let claims = validar_token(token.as_str())?;
+    if claims.exp == 0{
+        return Err(ServiceError::InvalidToken("Token no valido.".to_string()));  
+    }
+
+    Ok(Response {
+        codigo: Some(200),
+        status: Some(String::from("OK")),
+        mensaje: Some(String::from("Exitoso")),
+    })
+
 }
