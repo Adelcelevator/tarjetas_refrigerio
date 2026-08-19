@@ -27,6 +27,8 @@ pub enum ServiceError {
     Base64DecodeError,
     #[error("Existio un error interno del sistema.")]
     InternalServerError,
+    #[error("Database error: {0}")]
+    Database(#[from] diesel::result::Error),
 }
 
 impl ResponseError for ServiceError {

@@ -16,8 +16,8 @@ pub fn cifrar(texto_cifrar: String) -> Result<String,ServiceError> {
     let mut proto_nonce = [0u8;12];
     rand::rng().fill(&mut proto_nonce);
 
-    let nonce = Nonce::from_slice(&proto_nonce);
-    let ciphertext = match cipher.encrypt(nonce, texto_cifrar.as_bytes()){
+    let nonce = Nonce::from(proto_nonce);
+    let ciphertext = match cipher.encrypt(&nonce, texto_cifrar.as_bytes()){
         Ok(res)=>res,
         Err(error)=>{
             error!("Existio un error al cifrar el texto: {}",error);
@@ -55,7 +55,13 @@ pub fn descifrar(texto_descifrar: &String) -> Result<String,ServiceError> {
         return Err(ServiceError::InternalServerError);
     }
     let (nonce_bytes, ciphertext_bytes) = decodificado.split_at(12);
-    let nonce = Nonce::from_slice(&nonce_bytes); // 96-bits; unique per message
+    let nonce = match nonce_bytes.try_into(){
+        Ok(res)=>res,
+        Err(error)=>{
+            error!("No se pudo determinar el nonce: {}",error);
+        return Err(ServiceError::InvalidToken("No se pudo descifrar el token".to_string()));
+        }
+    };
     let plaintext = match cipher
         .decrypt(nonce, ciphertext_bytes){
             Ok(descifrado)=>descifrado,

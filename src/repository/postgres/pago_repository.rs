@@ -23,7 +23,7 @@ pub async fn guardar_pago_repo(
     }
 }
 
-pub async fn anular_pago(
+pub async fn _anular_pago(
     conn: &mut AsyncPgConnection,
     id_pago: i32,
 ) -> Result<usize, ServiceError> {

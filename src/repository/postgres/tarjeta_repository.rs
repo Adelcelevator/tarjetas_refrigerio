@@ -41,6 +41,7 @@ pub async fn cargar_saldo_tarjeta(con:&mut AsyncPgConnection, id_persona:&i32)->
                     .filter(tbl_representante_representado::dsl::estado.eq(Estados::Activo.to_string()))
                     .filter(tbl_representante_representado::dsl::repsentado_id.eq(id_persona))
                     .select(tbl_tarjeta::tar_saldo)
+                    .for_update()
                     .load::<Decimal>(con).await;
     
     match search{
