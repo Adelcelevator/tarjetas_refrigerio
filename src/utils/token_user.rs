@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use jsonwebtoken::errors::Result;
 use serde::{Deserialize, Serialize};
 use log::{error, info};
@@ -15,14 +15,10 @@ pub struct ClaimsUser {
 }
 
 pub fn create_jwt(usuario: &str,roles:&[Option<String>]) -> Result<String> {
-    let Some(expiration) = _expiracion() else{
-        error!("No se pudo generar el tiempo de expiracion para el token.");
-        return Ok(String::new());
-    };
     let roles_vec:Vec<String> = roles.iter().filter_map(|rol| rol.clone()).collect();
     let cont = ClaimsUser {
         sub: String::from(usuario),
-        exp: expiration as usize,
+        exp: expiracion_token() as usize,
         roles: roles_vec
     };
     if cont.sub.is_empty() {
@@ -53,22 +49,12 @@ pub fn validar_token(token: &str) -> std::result::Result<ClaimsUser,ServiceError
         }
 }
 
-fn _expiracion() -> Option<i64> {
-    let Some(tiempo_expiracion) = get_variable::<i64>("EXPIRACIONTOKENMINUTOS") else {
-        error!("No se pudo determinar la variable EXPIRACIONTOKENMINUTOS");
-        return None;
-    };
-    
-    let Some(time_delta) = chrono::TimeDelta::try_minutes(tiempo_expiracion) else{
-        error!("No se pudo determinar el time delta para el token.");
-        return None;
+pub fn expiracion_token()->i64{
+    let Some(tiempo) = get_variable::<i64>("EXPIRACIONTOKENMINUTOS") else{
+        error!("No se pudo recuperar la variable de tiempo para el token.");
+        return 0;
     };
 
-    let Some(date_time) = Utc::now()
-        .checked_add_signed(time_delta) else {
-            error!("No se pudo convertir el tiempo a utc");
-            return None;
-        };
-    
-    Some(date_time.timestamp())
+    let expira  = Utc::now() + Duration::minutes(tiempo);
+    expira.timestamp()
 }
